@@ -14,16 +14,16 @@ def build_panel():
     # core parameters
     width_var = tk.StringVar(value="800")
     height_var = tk.StringVar(value="600")
-    max_iter_var = tk.StringVar(value="300")
+    max_iter_var = tk.StringVar(value="700")
 
-    cx_var = tk.StringVar(value="-0.75")
-    cy_var = tk.StringVar(value="0.0")
+    cx_var = tk.StringVar(value="-0.815")
+    cy_var = tk.StringVar(value="0.178")
 
     sx_var = tk.StringVar(value="0.5")
     sy_var = tk.StringVar(value="0.5")
 
     zoom_start_var = tk.StringVar(value="1.0")
-    zoom_end_var = tk.StringVar(value="300.0")
+    zoom_end_var = tk.StringVar(value="400.0")
     n_frames_var = tk.StringVar(value="50")
 
     cmap_var = tk.StringVar(value="magma")
