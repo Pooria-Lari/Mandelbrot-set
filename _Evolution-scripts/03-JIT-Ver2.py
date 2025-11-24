@@ -15,7 +15,7 @@ Y_MIN, Y_MAX = -1.5, 1.5
 
 
 # -------------------------------------------------------------------
-# Core: compute a single Mandelbrot row (Numba-accelerated)
+# core: compute a single Mandelbrot row (Numba-accelerated)
 # -------------------------------------------------------------------
 
 @njit(fastmath=True)
