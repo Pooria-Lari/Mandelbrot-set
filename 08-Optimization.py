@@ -3,17 +3,21 @@ import tkinter as tk
 from tkinter import ttk
 
 import matplotlib
-matplotlib.use("TkAgg")  # Use TkAgg backend so Tkinter and matplotlib play nicely together
+matplotlib.use("TkAgg")  # Use TkAgg backend so Tkinter and matplotlib can work together
 import matplotlib.pyplot as plt
 import numpy as np
 from numba import njit, prange, cuda
 
 
-# ---------- Mandelbrot cores (CPU / GPU) ----------
+# -------------------------------------------------------------------
+# Fast Mandelbrot cores (CPU / GPU)
+# -------------------------------------------------------------------
 
 @njit(fastmath=True)
 def compute_mandelbrot_cpu_single(width, height, max_iter, x_min, x_max, y_min, y_max):
-    """Compute Mandelbrot escape iterations on a single CPU core."""
+    """
+    Mandelbrot computation on a single CPU core (Numba, no parallel loops).
+    """
     image = np.zeros((height, width), dtype=np.int32)
 
     dx = (x_max - x_min) / (width - 1)
@@ -31,7 +35,6 @@ def compute_mandelbrot_cpu_single(width, height, max_iter, x_min, x_max, y_min, 
             zi = 0.0
             it = 0
 
-            # |z|^2 <= 4  <=>  |z| <= 2
             while (zr * zr + zi * zi) <= 4.0 and it < max_iter:
                 zr2 = zr * zr - zi * zi + cr
                 zi = 2.0 * zr * zi + ci
@@ -45,7 +48,9 @@ def compute_mandelbrot_cpu_single(width, height, max_iter, x_min, x_max, y_min, 
 
 @njit(fastmath=True, parallel=True)
 def compute_mandelbrot_cpu_multi(width, height, max_iter, x_min, x_max, y_min, y_max):
-    """Compute Mandelbrot escape iterations using multiple CPU cores."""
+    """
+    Mandelbrot computation using multiple CPU cores (Numba + prange).
+    """
     image = np.zeros((height, width), dtype=np.int32)
 
     dx = (x_max - x_min) / (width - 1)
@@ -76,7 +81,9 @@ def compute_mandelbrot_cpu_multi(width, height, max_iter, x_min, x_max, y_min, y
 
 @cuda.jit
 def mandelbrot_kernel(x_min, x_max, y_min, y_max, max_iter, image):
-    """GPU kernel: each thread computes one pixel."""
+    """
+    GPU kernel: each CUDA thread computes one pixel.
+    """
     i, j = cuda.grid(2)
     height = image.shape[0]
     width = image.shape[1]
@@ -106,8 +113,11 @@ def mandelbrot_kernel(x_min, x_max, y_min, y_max, max_iter, image):
 
 def compute_mandelbrot_gpu(width, height, max_iter, x_min, x_max, y_min, y_max):
     """
-    Compute Mandelbrot escape iterations on the GPU using Numba CUDA.
-    This will raise if CUDA is not available; the caller is expected to fall back to CPU.
+    Mandelbrot computation on the GPU using Numba CUDA.
+
+    If CUDA is not available or something goes wrong, this function
+    will raise an exception and the caller is expected to fall back
+    to a CPU backend.
     """
     d_image = cuda.device_array((height, width), dtype=np.int32)
 
@@ -124,18 +134,20 @@ def compute_mandelbrot_gpu(width, height, max_iter, x_min, x_max, y_min, y_max):
     return d_image.copy_to_host()
 
 
-# ---------- Complex plane window / zoom ----------
+# -------------------------------------------------------------------
+# Bounds from center + zoom + position in frame
+# -------------------------------------------------------------------
 
 def compute_bounds(cx, cy, zoom, aspect, sx=0.5, sy=0.5):
     """
-    Compute the complex-plane rectangle to render.
+    Compute the complex-plane window from center, zoom, and frame position.
 
-    cx, cy : complex point we want to zoom into
-    zoom   : larger => smaller window => deeper zoom
-    aspect : width / height of the image
-    sx, sy : where that point appears in the frame (0..1)
-             e.g. sx=0.5, sy=0.5 -> center of the image
-                  sx=0.3, sy=0.5 -> 30% from left, vertically centered
+    cx, cy : point to zoom into (on the complex plane)
+    zoom   : larger zoom => smaller window => deeper zoom
+    aspect : width / height
+    sx, sy : where the zoom point appears inside the frame (0..1)
+             sx=0.5, sy=0.5 → center of the frame
+             sx=0.3, sy=0.5 → 30% from left, vertically centered
     """
     half_width = 1.5 / zoom
     half_height = half_width / aspect
@@ -152,17 +164,21 @@ def compute_bounds(cx, cy, zoom, aspect, sx=0.5, sy=0.5):
     return x_min, x_max, y_min, y_max
 
 
-# ---------- Coloring ----------
+# -------------------------------------------------------------------
+# Coloring
+# -------------------------------------------------------------------
 
 def colorize(image, max_iter, cmap_name="magma"):
     """
-    Turn the raw iteration counts into an RGB image using a matplotlib colormap.
+    Map iteration counts to an RGB image using a matplotlib colormap.
     """
     img = image.astype(float).copy()
 
+    # points that never escaped (inside the set)
     inside_mask = (img == max_iter)
     img[inside_mask] = 0.0
 
+    # log scale outside the set for smoother gradients
     nonzero_mask = (img > 0)
     img[nonzero_mask] = np.log(img[nonzero_mask])
 
@@ -178,7 +194,9 @@ def colorize(image, max_iter, cmap_name="magma"):
     return rgb
 
 
-# ---------- Realtime zoom rendering ----------
+# -------------------------------------------------------------------
+# Realtime zoom with selectable backend
+# -------------------------------------------------------------------
 
 def realtime_zoom(width, height, max_iter,
                   cx, cy, sx, sy,
@@ -186,12 +204,12 @@ def realtime_zoom(width, height, max_iter,
                   cmap_name="magma",
                   backend="cpu_multi"):
     """
-    Render a Mandelbrot zoom animation frame-by-frame.
+    Render a realtime Mandelbrot zoom animation.
 
     backend:
-      "cpu_single"  – Numba, single core
-      "cpu_multi"   – Numba, multi-core
-      "gpu"         – Numba CUDA (falls back to cpu_multi if it fails)
+      "cpu_single"  → Numba, single-core CPU
+      "cpu_multi"   → Numba, multi-core CPU (parallel)
+      "gpu"         → Numba CUDA (falls back to cpu_multi if unavailable)
     """
     width = int(width)
     height = int(height)
@@ -203,15 +221,16 @@ def realtime_zoom(width, height, max_iter,
     cy = float(cy)
     sx = float(sx)
     sy = float(sy)
-    max_iter = int(max_iter)
 
     aspect = width / height
+    max_iter = int(max_iter)
+
     zooms = np.geomspace(zoom_start, zoom_end, n_frames)
 
     backend_mode = backend
 
-    # Warm-up: compile the chosen backend once
-    print(f"[warm-up] backend = {backend_mode}")
+    # Warm-up for the chosen backend (JIT compile, CUDA init, etc.)
+    print(f"Warm-up backend: {backend_mode}")
     x_min0, x_max0, y_min0, y_max0 = compute_bounds(cx, cy, zooms[0], aspect, sx, sy)
 
     try:
@@ -231,12 +250,12 @@ def realtime_zoom(width, height, max_iter,
                                              x_min0, x_max0, y_min0, y_max0)
     except Exception as e:
         # If GPU or anything else fails here, fall back to CPU multi-core
-        print("Warm-up failed, falling back to CPU multi-core:", e)
+        print("Error during backend warm-up, switching to CPU multi-core:", e)
         backend_mode = "cpu_multi"
         _ = compute_mandelbrot_cpu_multi(width, height, max_iter,
                                          x_min0, x_max0, y_min0, y_max0)
 
-    # Live animation
+    # Start animation loop
     plt.ion()
     fig, ax = plt.subplots(figsize=(8, 6))
     im = None
@@ -245,30 +264,40 @@ def realtime_zoom(width, height, max_iter,
         x_min, x_max, y_min, y_max = compute_bounds(cx, cy, zoom, aspect, sx, sy)
         print(
             f" frame {idx}/{n_frames} | "
-            f"zoom = {zoom:.2f} | "
-            f"x_range = {x_max - x_min:.6f} | backend = {backend_mode}"
+            f"zoom = {zoom:.2f} | x_range = {x_max - x_min:.6f} | backend={backend_mode}"
         )
 
-        dyn_max_iter = max_iter  # you can make this depend on zoom if you want
+        # could make max_iter adaptive here; for now we keep it constant
+        dyn_max_iter = max_iter
 
         try:
             if backend_mode == "cpu_single":
-                image = compute_mandelbrot_cpu_single(width, height, dyn_max_iter,
-                                                      x_min, x_max, y_min, y_max)
+                image = compute_mandelbrot_cpu_single(
+                    width, height, dyn_max_iter,
+                    x_min, x_max, y_min, y_max
+                )
             elif backend_mode == "cpu_multi":
-                image = compute_mandelbrot_cpu_multi(width, height, dyn_max_iter,
-                                                     x_min, x_max, y_min, y_max)
+                image = compute_mandelbrot_cpu_multi(
+                    width, height, dyn_max_iter,
+                    x_min, x_max, y_min, y_max
+                )
             elif backend_mode == "gpu":
-                image = compute_mandelbrot_gpu(width, height, dyn_max_iter,
-                                               x_min, x_max, y_min, y_max)
+                image = compute_mandelbrot_gpu(
+                    width, height, dyn_max_iter,
+                    x_min, x_max, y_min, y_max
+                )
             else:
-                image = compute_mandelbrot_cpu_multi(width, height, dyn_max_iter,
-                                                     x_min, x_max, y_min, y_max)
+                image = compute_mandelbrot_cpu_multi(
+                    width, height, dyn_max_iter,
+                    x_min, x_max, y_min, y_max
+                )
         except Exception as e:
-            print("Backend failed mid-frame, switching to CPU multi-core:", e)
+            print("Error in backend during frame, switching to CPU multi-core:", e)
             backend_mode = "cpu_multi"
-            image = compute_mandelbrot_cpu_multi(width, height, dyn_max_iter,
-                                                 x_min, x_max, y_min, y_max)
+            image = compute_mandelbrot_cpu_multi(
+                width, height, dyn_max_iter,
+                x_min, x_max, y_min, y_max
+            )
 
         rgb_frame = colorize(image, dyn_max_iter, cmap_name=cmap_name)
 
@@ -277,7 +306,7 @@ def realtime_zoom(width, height, max_iter,
                 rgb_frame,
                 extent=(x_min, x_max, y_min, y_max),
                 origin="lower",
-                animated=True
+                animated=True,
             )
             ax.set_xlabel("Real axis")
             ax.set_ylabel("Imaginary axis")
@@ -287,7 +316,9 @@ def realtime_zoom(width, height, max_iter,
 
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
-        ax.set_title(f"Mandelbrot Realtime Zoom  |  zoom = {zoom:.2f}  |  {backend_mode}")
+        ax.set_title(
+            f"Realtime Mandelbrot Zoom  |  zoom = {zoom:.2f}  |  {backend_mode}"
+        )
 
         fig.canvas.draw()
         fig.canvas.flush_events()
@@ -297,26 +328,33 @@ def realtime_zoom(width, height, max_iter,
     plt.show()
 
 
-# ---------- Tkinter control panel ----------
+# -------------------------------------------------------------------
+# Tkinter control panel
+# -------------------------------------------------------------------
 
 def build_ui():
+    """
+    Build a Tkinter control panel for configuring the Mandelbrot zoom
+    and selecting the compute backend.
+    """
     root = tk.Tk()
     root.title("Mandelbrot Realtime Zoom – Settings")
 
-    # basic parameters
+    # text variables with default values
     width_var = tk.StringVar(value="800")
     height_var = tk.StringVar(value="600")
-    max_iter_var = tk.StringVar(value="600")
+    max_iter_var = tk.StringVar(value="300")
 
     cx_var = tk.StringVar(value="-0.815")
     cy_var = tk.StringVar(value="0.178")
 
-    sx_var = tk.StringVar(value="0.5")   # where the zoom point is in the frame
+    # position of the zoom point inside the frame
+    sx_var = tk.StringVar(value="0.5")
     sy_var = tk.StringVar(value="0.5")
 
     zoom_start_var = tk.StringVar(value="1.0")
-    zoom_end_var = tk.StringVar(value="400.0")
-    n_frames_var = tk.StringVar(value="150")
+    zoom_end_var = tk.StringVar(value="300.0")
+    n_frames_var = tk.StringVar(value="50")
 
     cmap_var = tk.StringVar(value="magma")
 
@@ -343,7 +381,7 @@ def build_ui():
         return entry
 
     row = 0
-    add_row(row, "width:", width_var); row += 1
+    add_row(row, "width:", width_var);   row += 1
     add_row(row, "height:", height_var); row += 1
     add_row(row, "max_iter:", max_iter_var); row += 1
 
@@ -366,8 +404,8 @@ def build_ui():
     )
     row += 1
     add_row(row, "zoom_start:", zoom_start_var); row += 1
-    add_row(row, "zoom_end:", zoom_end_var); row += 1
-    add_row(row, "frames:", n_frames_var); row += 1
+    add_row(row, "zoom_end:", zoom_end_var);     row += 1
+    add_row(row, "frames:", n_frames_var);       row += 1
 
     ttk.Label(root, text="colormap (e.g. magma, plasma, viridis):").grid(
         row=row, column=0, columnspan=2, pady=(8, 2)
@@ -386,7 +424,7 @@ def build_ui():
         textvariable=backend_var,
         values=backend_options,
         state="readonly",
-        width=22
+        width=22,
     )
     backend_combo.grid(row=row, column=1, sticky="w", padx=5, pady=(8, 2))
     backend_combo.current(1)  # default: CPU multi-core
