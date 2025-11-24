@@ -1,15 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-#confige
-width  = 800
+width = 800
 height = 600
-max_iter = 500
 
-x_min, x_max = -2.0, 1.0
-y_min, y_max = -1.5, 1.5
+max_iter = 300
 
-image = np.zeros((height, width), dtype=int)
+x_min = -2.0
+x_max = 1.0
+
+y_min = -1.5
+y_max = 1.5
+
+image = np.zeros((height, width))
 
 for i in range(height):
     y = y_min + i * (y_max - y_min) / (height - 1)
@@ -24,30 +27,16 @@ for i in range(height):
             iter_count += 1
         image[i, j] = iter_count
 
-    #Progress bar
-    progress = (i + 1) / height * 100
-    print(f"\r Process {progress:.1f}% compelte", end="", flush=True)
 
-
-# Color
-img = image.astype(float).copy()
-inside_mask = (img == max_iter)
-img[inside_mask] = 0.0
-
-nonzero_mask = (img > 0)
-img[nonzero_mask] = np.log(img[nonzero_mask])
-
-
-#show
 plt.figure(figsize=(8, 6))
 plt.imshow(
-    img,
+    image,
     extent=(x_min, x_max, y_min, y_max),
     origin="lower",
     cmap="magma"
 )
 plt.xlabel("Real axis")
 plt.ylabel("Imaginary axis")
-plt.title("Colored Mandelbrot Set")
-plt.colorbar(label="Iterations (log-scaled)")
+plt.title("Mandelbrot Set (escape-time coloring)")
+plt.colorbar(label="Number of iterations")
 plt.show()
